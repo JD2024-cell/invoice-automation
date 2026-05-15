@@ -107,6 +107,9 @@ def extract_invoice_data(pdf_file):
             
             # Invoice number patterns
             invoice_patterns = [
+                r'Invoice\s*No\.\s*\n.*?(INV-[A-Z0-9\-]+)',  # Invoice No. \n ... INV-0020
+                r'Invoice\s*No\.\s*([A-Z0-9\-]+)',  # Invoice No. INV-0020
+                r'invoice\s+(TBI-\d{4}-\d+)',  # invoice TBI-2025-43
                 r'Tax\s*Invoice\s*-\s*([\d]+)',
                 r'Invoice\s*#\s*([\d]+)\b',
                 r'Invoice\s*Number[:\s]*([A-Z0-9\-]+)',
@@ -122,6 +125,7 @@ def extract_invoice_data(pdf_file):
             
             # Date patterns
             date_patterns = [
+                r'date\s+((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4})',  # date November 13, 2025
                 r'InvoiceDate[:\s]*(\d{1,2}[A-Za-z]{3}\d{4})',
                 r'Invoice\s*Date[:\s]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
                 r'Date[:\s]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
@@ -146,8 +150,8 @@ def extract_invoice_data(pdf_file):
                     break
             
             # Total amount patterns
-            total_patterns = [
-                r'Invoice\s*Totals\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+([\d,]+\.?\d*)',
+            total_patterns = [                r'TOTAL\s+AUD\s+\$\s*([\d,]+\.\d{2})',  # TOTAL AUD $ 1,164.63
+                r'Total\s+USD\s+\$\s*([\d,]+\.\d{2})',  # Total USD $ 20,179.45                r'Invoice\s*Totals\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+([\d,]+\.?\d*)',
                 r'Total\s*Amount\s*In\s*AUD[:\s]*([\d,]+\.?\d*)',
                 r'NetAmountDue[:\s]*([\d,]+\.?\d*)',
                 r'TOTAL\s*AUD[:\s]*([\d,]+\.?\d*)',
@@ -163,6 +167,7 @@ def extract_invoice_data(pdf_file):
             
             # Tax/GST patterns
             tax_patterns = [
+                r'TOTAL\s+GST\s+10%\s+\$\s*([\d,]+\.\d{2})',  # TOTAL GST 10% $ 105.88
                 r'Invoice\s*Totals\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+([\d,]+\.?\d*)',
                 r'Tax\s*Amount\s*\(\d+%\)\s*In\s*AUD[:\s]*([\d,]+\.?\d*)',
                 r'GST@\d+%[:\s]*([\d,]+\.?\d*)',
@@ -178,10 +183,11 @@ def extract_invoice_data(pdf_file):
             
             # Subtotal patterns
             subtotal_patterns = [
+                r'Subtotal\s+\$\s*([\d,]+\.\d{2})',  # Subtotal $ 20,179.45
                 r'Invoice\s*Totals\s+([\d,]+\.?\d*)',
                 r'Sub\s*Total\s*In\s*AUD[:\s]*([\d,]+\.?\d*)',
                 r'GrossAmount[:\s]*([\d,]+\.?\d*)',
-                r'Subtotal[:\s]*([\d,]+\.?\d*)',
+                r'Subtotal[:\s]*\$?([\d,]+\.?\d*)',
                 r'Sub[\s-]*Total[:\s]*\$?([\d,]+\.?\d*)'
             ]
             for pattern in subtotal_patterns:
@@ -222,6 +228,28 @@ def extract_invoice_data(pdf_file):
                         'description': item[0],
                         'quantity': '1',
                         'price': item[5]
+                    })
+            
+            # TBI format: PV-01 5.73 km $235.00 /km $1,346.55
+            if not items and not invoice_data['items']:
+                tbi_pattern = r'([A-Z]{2}-\d{2})\s+([\d\.]+\s+km)\s+\$[\d,]+\.?\d+\s+/km\s+\$([\d,]+\.?\d+)'
+                tbi_items = re.findall(tbi_pattern, full_text)
+                for item in tbi_items:
+                    invoice_data['items'].append({
+                        'description': item[0],
+                        'quantity': item[1],
+                        'price': item[2]
+                    })
+            
+            # NPgeo single-line format: Palm Valley Repro Project: 6h 25m $165/hr 10% $1,058.75
+            if not items and not invoice_data['items']:
+                npgeo_pattern = r'(Palm\s+Valley[^:]+):\s+([\d]+h\s+[\d]+m)\s+\$[\d,]+/hr\s+\d+%\s+\$([\d,]+\.?\d+)'
+                npgeo_items = re.findall(npgeo_pattern, full_text)
+                for item in npgeo_items:
+                    invoice_data['items'].append({
+                        'description': item[0].strip(),
+                        'quantity': item[1],
+                        'price': item[2]
                     })
             
             for item in items[:20]:
